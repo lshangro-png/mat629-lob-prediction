@@ -101,12 +101,54 @@ has gaps, so "10 rows later" is not always 10 seconds later). The label is Up / 
 
 ## Results
 
-Run notebooks 02–05 to fill in this table (`results/*_summary.csv`).
+Full data, test split = 2021-04-17 15:00 → 04-19 09:54 UTC (154,544 targets, 15,457
+non-overlapping 10-second steps). Fee 1.5 bps. θ is chosen on validation and applied once to
+test. Run on a Colab T4 with `notebooks/colab_runner.ipynb`.
 
-| Model | Feature set | Test acc | Dir-F1 | Argmax return | θ (val) | θ return | θ Sharpe |
-|---|---|---|---|---|---|---|---|
-| CNN | full | | | | | | |
-| … | | | | | | | |
+| Model | Feature set | Test acc | Dir-F1 | Argmax return | Argmax Sharpe | θ (val) | θ return | θ Sharpe | θ turnover |
+|---|---|---|---|---|---|---|---|---|---|
+| CNN | full | 0.4447 | 0.4543 | −40.05% | −96.6 | 0.850 | +0.72% | 16.8 | 28 |
+| CNN | no_pca | 0.4444 | 0.4478 | −40.27% | −99.2 | 0.850 | −0.35% | −9.7 | 42 |
+| CNN | no_market | 0.4429 | 0.4374 | −42.23% | −104.8 | 0.775 | −0.71% | −17.0 | 62 |
+| LSTM | full | 0.4338 | 0.4470 | −48.55% | −124.7 | 0.800 | −0.16% | −2.2 | 96 |
+| LSTM | no_pca | 0.4342 | 0.4490 | −46.85% | −116.9 | 0.850 | +0.27% | 18.2 | 22 |
+| LSTM | no_market | 0.4363 | 0.4451 | −46.52% | −115.7 | 0.825 | −0.12% | −3.0 | 54 |
+| Transformer | full | 0.4373 | 0.4660 | −42.80% | −98.6 | 0.825 | +0.32% | 13.2 | 152 |
+| Transformer | no_pca | 0.4340 | 0.4636 | −39.69% | −89.5 | 0.850 | −0.06% | −8.7 | 24 |
+| Transformer | no_market | 0.4361 | 0.4559 | −42.48% | −101.3 | 0.850 | +0.05% | 5.6 | 30 |
+
+Buy & hold over the same test window: −6.52% (max drawdown −14.8%).
+
+**Takeaways**
+
+- **Accuracy is at the majority-class level.** Flat is 43.1% of test labels, so 0.43–0.44
+  accuracy is no better than always predicting Flat. The directional F1 (~0.45–0.47) shows some
+  signal, and the Transformer scores best on it.
+- **Trading every prediction loses 40–49% after fees.** The edge per 10-second step is much
+  smaller than the 1.5 bps cost of changing position.
+- **With a high confidence threshold the models almost stop trading.** θ = 0.78–0.85, with
+  22–152 position changes over 1.8 days and returns between −0.7% and +0.7%. With so few trades
+  the Sharpe values are not statistically meaningful, and no feature set wins consistently.
+- **The Transformer overfits fast.** Its best validation epoch is 2–4.
+
+<details>
+<summary>Development run: first ~1.2 days (<code>SUBSET_ROWS = 100_000</code>)</summary>
+
+Test split = 2021-04-08 11:09 → 15:19 UTC (14,958 targets, 1,496 steps). Buy & hold: +2.1%.
+
+| Model | Feature set | Test acc | Dir-F1 | Argmax return | θ (val) | θ return | θ Sharpe | θ turnover |
+|---|---|---|---|---|---|---|---|---|
+| CNN | full | 0.4578 | 0.4165 | −6.74% | 0.800 | +0.09% | 31.3 | 20 |
+| CNN | no_pca | 0.4596 | 0.4178 | −6.69% | 0.775 | −0.02% | −15.3 | 18 |
+| CNN | no_market | 0.4521 | 0.4218 | −6.04% | 0.700 | −0.07% | −22.3 | 30 |
+| LSTM | full | 0.3983 | 0.3966 | −8.28% | 0.675 | −0.45% | −71.9 | 128 |
+| LSTM | no_pca | 0.4426 | 0.3898 | −7.40% | 0.775 | −0.10% | −106.3 | 10 |
+| LSTM | no_market | 0.4193 | 0.4012 | −7.46% | 0.775 | −0.07% | −31.3 | 18 |
+| Transformer | full | 0.4487 | 0.4169 | −7.17% | 0.800 | −0.03% | −18.6 | 16 |
+| Transformer | no_pca | 0.4569 | 0.4184 | −5.99% | 0.800 | +0.15% | 47.9 | 14 |
+| Transformer | no_market | 0.4598 | 0.4199 | −5.85% | 0.750 | −0.05% | −44.7 | 8 |
+
+</details>
 
 ## Notes on changes from the original course notebooks
 
