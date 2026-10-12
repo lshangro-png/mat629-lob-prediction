@@ -1,0 +1,17 @@
+# data (download from Kaggle / build with scripts/build_dataset.py)
+data/
+*.csv
+!results/*.csv
+*.parquet
+
+# Python / Jupyter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
