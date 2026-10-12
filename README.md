@@ -139,6 +139,57 @@ Buy & hold over the same test window: −6.52% (max drawdown −14.8%).
   the Sharpe values are not statistically meaningful, and no feature set wins consistently.
 - **The Transformer overfits fast.** Its best validation epoch is 2–4.
 
+### Longer horizons, LightGBM baseline and the hysteresis rule
+
+Full data, `full` feature set unless noted (LightGBM also on the other two sets, see
+[`results/horizons_summary.csv`](results/horizons_summary.csv)). Hysteresis = enter/exit
+thresholds chosen on validation. Buy & hold over the test window ≈ −6.6% at every horizon.
+
+| Horizon | Model | Test acc | Always-Flat acc | Dir-F1 | Argmax return | Hysteresis return | Hyst. turnover |
+|---|---|---|---|---|---|---|---|
+| 10 s | CNN | 0.445 | 0.431 | 0.454 | −40.1% | **+26.8%** | 2,249 |
+| 10 s | LSTM | 0.434 | 0.431 | 0.447 | −48.6% | +4.5% | 428 |
+| 10 s | Transformer | 0.437 | 0.431 | 0.466 | −42.8% | +3.5% | 284 |
+| 10 s | LightGBM | 0.409 | 0.431 | 0.465 | −39.3% | +6.3% | 974 |
+| 30 s | CNN | 0.395 | 0.359 | 0.413 | −2.4% | +0.1% | 8 |
+| 30 s | LSTM | 0.390 | 0.359 | 0.426 | −16.0% | +0.7% | 16 |
+| 30 s | Transformer | 0.399 | 0.359 | 0.437 | −8.5% | +1.0% | 8 |
+| 30 s | LightGBM | 0.390 | 0.359 | 0.446 | −3.0% | +13.3% | 803 |
+| 60 s | CNN | 0.394 | 0.244 | 0.436 | −12.3% | +8.3% | 1,059 |
+| 60 s | LSTM | 0.400 | 0.244 | 0.445 | −7.5% | +4.0% | 156 |
+| 60 s | Transformer | 0.382 | 0.244 | 0.416 | +1.9% | −0.3% | 648 |
+| 60 s | LightGBM | 0.419 | 0.244 | 0.466 | −2.4% | +8.6% | 28 |
+| 300 s | CNN | 0.373 | 0.107 | 0.420 | −2.6% | −4.4% | 37 |
+| 300 s | LSTM | 0.406 | 0.107 | 0.447 | −1.2% | −3.9% | 9 |
+| 300 s | Transformer | 0.323 | 0.107 | 0.372 | −11.1% | −12.3% | 21 |
+| 300 s | LightGBM | 0.443 | 0.107 | 0.476 | +18.0% | −2.4% | 18 |
+
+**Robustness of the hysteresis results** ([`scripts/analyze_preds.py`](scripts/analyze_preds.py),
+[`results/hysteresis_robustness.csv`](results/hysteresis_robustness.csv)). For each run: the
+P&L split into long and short positions, the P&L per day, and the test return over the 3×3
+grid of neighbouring (enter, exit) values.
+
+- **CNN at 10 s holds up best.** Both sides make money (long +15%, short +23%, before
+  −14% fees). It is positive on each of the three test days (+3.6% / +16.9% / +3.5%), and every
+  neighbouring (enter, exit) pair stays positive (+14% … +49%). LightGBM `no_pca` at 10 s is
+  also positive in every neighbour (+0.8% … +48%). LSTM and Transformer at 10 s are small but
+  positive on every day.
+- **The 30 s and 60 s gains are mostly the 04-18 sell-off.** Most of their P&L comes from
+  short positions on 04-18, and nearby (enter, exit) values often turn negative (for example,
+  LightGBM `full` at 30 s ranges from −12% to +15%).
+- **Longer horizons did not help.** Accuracy rises above the always-Flat baseline only
+  because Flat becomes rare, and Dir-F1 barely moves. At 300 s every hysteresis result is
+  negative.
+- **LightGBM matches the deep models on classification.** Its Dir-F1 is equal or better at
+  every horizon. The deep models' advantage, mainly the CNN at 10 s, shows up only in how
+  well their probabilities rank trades.
+
+**Caveats.** There is a single 1.8-day test window, dominated by one sell-off. Many
+configurations were compared on it (24 here, plus the earlier runs), so the best one is
+optimistically selected. Execution is assumed at the mid-price with no latency, and 2,249
+position changes in 1.8 days is very active. Walk-forward evaluation over several windows
+and multiple seeds is needed before calling any of these results an edge.
+
 <details>
 <summary>Development run: first ~1.2 days (<code>SUBSET_ROWS = 100_000</code>)</summary>
 
