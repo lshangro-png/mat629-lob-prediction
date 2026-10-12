@@ -6,8 +6,12 @@ KAGGLE_DATASET = "martinsn/high-frequency-crypto-limit-order-book-data"
 SEED = 42
 
 # ── Labels ────────────────────────────────────────────────────────────────────
-HORIZON = 10              # prediction horizon, in seconds
-LABEL_THRESHOLD = 1.5e-4  # |future return| above this → Up / Down, else Flat
+HORIZON = 10                    # default prediction horizon, in seconds
+HORIZONS = (10, 30, 60, 300)    # labels are built for all of these
+# |future return| above the threshold → Up / Down, else Flat. 10 s keeps the
+# original 1.5 bps; longer horizons use the round-trip cost (2 × FEE = 3 bps),
+# so an "Up" label is a move that would still be profitable after fees.
+LABEL_THRESHOLDS = {10: 1.5e-4, 30: 3e-4, 60: 3e-4, 300: 3e-4}
 
 # ── Features ──────────────────────────────────────────────────────────────────
 N_LEVELS = 15             # order-book levels per side

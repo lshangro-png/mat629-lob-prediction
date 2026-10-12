@@ -108,22 +108,22 @@ def add_market_features(df):
     return df
 
 
-def add_labels(df):
-    """future_return[t] = mid(t + HORIZON seconds) / mid(t) - 1.
+def add_labels(df, horizons=C.HORIZONS):
+    """For each horizon h: future_return_h[t] = mid(t + h seconds) / mid(t) - 1.
 
-    Looked up by timestamp rather than `shift(-HORIZON)`, because the feed has
-    gaps: 10 rows later is not always 10 seconds later. Rows whose future
-    timestamp is missing get `has_label = False` and are never used as targets.
+    Looked up by timestamp rather than `shift(-h)`, because the feed has gaps:
+    h rows later is not always h seconds later. Rows whose future timestamp is
+    missing are never used as targets for that horizon.
     """
     mid = df.set_index("time")["midpoint"]
-    future = mid.reindex(df["time"] + pd.Timedelta(seconds=C.HORIZON)).to_numpy()
-    df["future_return"] = future / df["midpoint"].to_numpy() - 1
-    df["has_label"] = ~np.isnan(df["future_return"])
-    df["label"] = np.select(
-        [df["future_return"] > C.LABEL_THRESHOLD,
-         df["future_return"] < -C.LABEL_THRESHOLD],
-        [1, -1], default=0).astype("int8")
-    return df
+    cols = {}
+    for h in horizons:
+        future = mid.reindex(df["time"] + pd.Timedelta(seconds=h)).to_numpy()
+        ret = future / df["midpoint"].to_numpy() - 1
+        th = C.LABEL_THRESHOLDS[h]
+        cols[f"future_return_{h}"] = ret.astype("float32")
+        cols[f"label_{h}"] = np.select([ret > th, ret < -th], [1, -1], default=0).astype("int8")
+    return pd.concat([df, pd.DataFrame(cols, index=df.index)], axis=1)
 
 
 def add_classic_factors(df):
@@ -208,12 +208,12 @@ def rolling_zscore(df, cols, window=C.ZSCORE_WINDOW, min_periods=C.ZSCORE_MIN_PE
 # ══════════════════════════════════════════════════════════════════════════════
 # 4. Split + PCA
 # ══════════════════════════════════════════════════════════════════════════════
-def assign_splits(df):
+def assign_splits(df, horizons=C.HORIZONS):
     """Chronological train / val / test split with purging.
 
-    A row is a usable target (`is_target`) only if its whole label window
-    [t, t + HORIZON] lies inside its own split, so no training label is built
-    from validation or test prices (and likewise val → test).
+    For each horizon h, a row is a usable target (`is_target_h`) only if its
+    whole label window [t, t + h] lies inside its own split, so no training
+    label is built from validation or test prices (and likewise val → test).
     """
     n = len(df)
     cut1 = int(n * C.TRAIN_FRAC)
@@ -222,14 +222,17 @@ def assign_splits(df):
     split[:cut1], split[cut1:cut2], split[cut2:] = "train", "val", "test"
     df["split"] = split
 
-    label_end = df["time"] + pd.Timedelta(seconds=C.HORIZON)
     next_start = df["split"].map({"train": df["time"].iloc[cut1],
                                   "val": df["time"].iloc[cut2]})   # NaT for test
-    df["is_target"] = df["has_label"] & ((label_end < next_start) | next_start.isna())
+    for h in horizons:
+        label_end = df["time"] + pd.Timedelta(seconds=h)
+        df[f"is_target_{h}"] = (df[f"future_return_{h}"].notna()
+                                & ((label_end < next_start) | next_start.isna()))
 
     for s in ["train", "val", "test"]:
         m = df["split"] == s
-        print(f"  {s:<5}: {m.sum():>9,} rows | {df.loc[m, 'is_target'].sum():>9,} targets | "
+        n_t = " / ".join(f"{df.loc[m, f'is_target_{h}'].sum():,}" for h in horizons)
+        print(f"  {s:<5}: {m.sum():>9,} rows | targets ({'/'.join(map(str, horizons))}s): {n_t} | "
               f"{df.loc[m, 'time'].iloc[0]} → {df.loc[m, 'time'].iloc[-1]}")
     return df
 
@@ -287,15 +290,21 @@ def build_dataset(data_dir=None, nrows=None, out_path=None):
     print("5. PCA")
     df, pca_cols, pca_info = add_pca(df)
 
-    keep = (["time", "split", "is_target", "label", "future_return"]
+    label_cols = [f"{k}_{h}" for h in C.HORIZONS
+                  for k in ("is_target", "label", "future_return")]
+    keep = (["time", "split"] + label_cols
             + pca_cols + LOB_COLS + MARKET_COLS + CLASSIC_COLS)
     df = df[keep].copy()
-    df["future_return"] = df["future_return"].astype("float32")
 
+    label_dist = {h: df.loc[df[f"is_target_{h}"], f"label_{h}"].value_counts(normalize=True)
+                     .sort_index().round(4).to_dict() for h in C.HORIZONS}
     meta = {"pca_cols": pca_cols, "pca": pca_info, "n_rows": len(df),
-            "label_dist": df.loc[df["is_target"], "label"].value_counts(normalize=True)
-                            .sort_index().round(4).to_dict()}
-    print(f"Done: {df.shape} | label dist (down/flat/up): {meta['label_dist']}")
+            "horizons": list(C.HORIZONS),
+            "label_thresholds": {h: C.LABEL_THRESHOLDS[h] for h in C.HORIZONS},
+            "label_dist": label_dist}
+    print(f"Done: {df.shape}")
+    for h, d in label_dist.items():
+        print(f"  label dist {h:>3}s (down/flat/up): {d}")
 
     if out_path is not None:
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)

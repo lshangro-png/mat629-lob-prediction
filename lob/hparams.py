@@ -19,4 +19,10 @@ HPARAMS = {
         train_kwargs=dict(epochs=30, lr=1e-3, weight_decay=1e-4, patience=6,
                           scheduler="onecycle", monitor="loss"),
     ),
+    "lgbm": dict(
+        params=dict(n_estimators=2000, learning_rate=0.05, num_leaves=31,
+                    min_child_samples=200, subsample=0.8, subsample_freq=1,
+                    colsample_bytree=0.8, reg_lambda=1.0, n_jobs=-1,
+                    early_stopping_rounds=50),
+    ),
 }

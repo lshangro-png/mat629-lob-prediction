@@ -21,15 +21,17 @@ with `kagglehub`, or you can point it at a local folder containing `BTC_1sec.csv
 lob/                     shared code, used by every notebook
   config.py              horizon, label threshold, split fractions, fee …
   features.py            raw CSV → features, labels, z-score, split, PCA
-  data.py                feature sets, sliding-window Dataset, DataLoaders
+  data.py                feature sets, labels, target rows
+  loaders.py             sliding-window Dataset + DataLoaders (PyTorch)
   models.py              LOBCNN, LOBLSTM, LOBTransformer
+  baselines.py           LightGBM baseline (current-second features only)
   training.py            training loop (early stopping on validation)
-  backtest.py            non-overlapping, fee-aware backtest + threshold sweep
-  experiment.py          train → pick threshold on val → test once → plots
+  backtest.py            non-overlapping, fee-aware backtest; threshold and hysteresis rules
+  experiment.py          train → pick trading rule on val → test once → plots, saved predictions
   hparams.py             per-model hyperparameters
 scripts/
   build_dataset.py       build data/features.parquet from the command line
-  run_model.py           train + evaluate one model on all feature sets (resumable)
+  run_model.py           train + evaluate one model over feature sets × horizons (resumable)
 notebooks/
   colab_runner.ipynb     one-click Colab run of everything, results kept in Google Drive
   01_build_dataset.ipynb
@@ -37,7 +39,7 @@ notebooks/
   03_lstm.ipynb
   04_transformer.ipynb
   05_compare.ipynb       combines results/*_summary.csv
-results/                 per-model summary CSVs (written by notebooks 02–04)
+results/h<horizon>/      per-model summary CSVs, figures, val/test probabilities
 ```
 
 ## Quick start
@@ -66,9 +68,11 @@ data/features_100000.parquet`. Subset runs use their own feature file and write 
 
 ## Method
 
-**Labels.** `future_return[t] = mid(t + 10 s) / mid(t) − 1`, looked up by timestamp (the feed
-has gaps, so "10 rows later" is not always 10 seconds later). The label is Up / Down when
-|return| > 1.5 bps, and Flat otherwise.
+**Labels.** For each horizon h ∈ {10, 30, 60, 300} s, `future_return_h[t] = mid(t + h) / mid(t) − 1`,
+looked up by timestamp (the feed has gaps, so "h rows later" is not always h seconds later).
+The label is Up / Down when |return| exceeds a threshold, and Flat otherwise. The threshold is
+1.5 bps at 10 s (as in the original project) and 3 bps (the round-trip cost) for longer
+horizons, so an Up label is a move that is still profitable after paying to enter and exit.
 
 **Features** (all normalised with a backward-looking 1-hour rolling z-score, clipped to ±10):
 
@@ -92,12 +96,16 @@ has gaps, so "10 rows later" is not always 10 seconds later). The label is Up / 
 1. Chronological split: 70% train, 15% validation, 15% test. Rows whose 10-second label window
    crosses into the next split are purged from the targets.
 2. Early stopping on validation loss. The best-validation weights are restored.
-3. Trading rule: go short if P(Down) > θ, go long if P(Up) > θ, otherwise stay flat. θ is
-   chosen by **validation** Sharpe and then applied once to test. Argmax trading is reported
-   too.
-4. Backtest on non-overlapping 10-second steps, cost = 1.5 bps × |Δposition| (so a reversal
-   pays twice). Sharpe is annualised with √(steps per year) ≈ 1776. Compare these Sharpe
-   values across models only, not with daily-frequency strategies.
+3. Trading rules, all chosen by **validation** Sharpe and then applied once to test:
+   - *argmax*: trade every prediction;
+   - *threshold θ*: short if P(Down) > θ, long if P(Up) > θ, otherwise flat;
+   - *hysteresis (enter / exit)*: open a position when its class probability > enter, keep it
+     while that probability stays ≥ exit, and reverse directly on a strong opposite signal.
+     The lower exit bar avoids paying to close and reopen on every small dip in confidence.
+4. Backtest on non-overlapping steps of length h, cost = 1.5 bps × |Δposition| (so a reversal
+   pays twice). Sharpe is annualised with √(steps per year) (≈ 1776 at 10 s). Compare these
+   Sharpe values across models only, not with daily-frequency strategies.
+5. Baselines: always-Flat (`flat_acc`) and LightGBM on the current second's features.
 
 ## Results
 
