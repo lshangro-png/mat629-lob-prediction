@@ -26,8 +26,12 @@ lob/                     shared code, used by every notebook
   training.py            training loop (early stopping on validation)
   backtest.py            non-overlapping, fee-aware backtest + threshold sweep
   experiment.py          train → pick threshold on val → test once → plots
-scripts/build_dataset.py build data/features.parquet from the command line
+  hparams.py             per-model hyperparameters
+scripts/
+  build_dataset.py       build data/features.parquet from the command line
+  run_model.py           train + evaluate one model on all feature sets (resumable)
 notebooks/
+  colab_runner.ipynb     one-click Colab run of everything, results kept in Google Drive
   01_build_dataset.ipynb
   02_cnn.ipynb
   03_lstm.ipynb
@@ -38,15 +42,17 @@ results/                 per-model summary CSVs (written by notebooks 02–04)
 
 ## Quick start
 
-**Colab:** open a notebook from GitHub, select a GPU runtime and run all cells. The first cell
-clones this repo and installs the dependencies. Set `REPO_URL` in that cell to your fork.
+**Colab:** open [`notebooks/colab_runner.ipynb`](https://colab.research.google.com/github/lshangro-png/mat629-lob-prediction/blob/main/notebooks/colab_runner.ipynb),
+select a GPU runtime, and run the setup cell, then one cell per model. Data and results are
+stored in `MyDrive/mat629-lob/`, and an interrupted run resumes where it stopped. The
+per-model notebooks (02–04) can also be opened in Colab directly for interactive work.
 
 **Locally:**
 
 ```bash
 pip install -r requirements.txt
 python scripts/build_dataset.py            # or: --data-dir path/to/csvs
-jupyter lab notebooks/
+python scripts/run_model.py --model cnn    # or open notebooks/ in Jupyter
 ```
 
 Building the full table takes about 1 minute and about 2 GB of RAM. Each model notebook

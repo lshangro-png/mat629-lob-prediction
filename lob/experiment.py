@@ -19,7 +19,9 @@ MIN_TURNOVER = 20   # thresholds that barely trade on val are not eligible
 
 
 def run_experiment(df, meta, model_name, feature_set, model_kwargs, train_kwargs,
-                   seq_len, batch_size, device, fee=C.FEE, num_workers=2, plot=True):
+                   seq_len, batch_size, device, fee=C.FEE, num_workers=2, plot=True,
+                   fig_path=None):
+    """`fig_path`: save the figure there instead of showing it (for scripts)."""
     title = f"{model_name.upper()} | {feature_set} ({FEATURE_SET_DESC[feature_set]})"
     print("=" * 90 + f"\n{title}\n" + "=" * 90)
     set_seed(C.SEED)
@@ -62,7 +64,8 @@ def run_experiment(df, meta, model_name, feature_set, model_kwargs, train_kwargs
     print(format_stats("Buy & hold (no fee)", bt_bh))
 
     if plot:
-        _plot(title, history, y_test, y_pred, sweep, th, bt_argmax, bt_th, bt_bh, fee)
+        _plot(title, history, y_test, y_pred, sweep, th, bt_argmax, bt_th, bt_bh, fee,
+              fig_path)
 
     summary = {
         "model": model_name, "feature_set": feature_set, "n_features": n_features,
@@ -86,7 +89,8 @@ def save_summary(rows, model_name, out_dir="results"):
     return out
 
 
-def _plot(title, history, y_true, y_pred, sweep, th, bt_argmax, bt_th, bt_bh, fee):
+def _plot(title, history, y_true, y_pred, sweep, th, bt_argmax, bt_th, bt_bh, fee,
+          fig_path=None):
     fig, ax = plt.subplots(2, 3, figsize=(20, 10))
     fig.suptitle(title, fontsize=14)
     ep = range(1, len(history["train_loss"]) + 1)
@@ -127,4 +131,9 @@ def _plot(title, history, y_true, y_pred, sweep, th, bt_argmax, bt_th, bt_bh, fe
         if x is not ax[0, 2]:
             x.grid(alpha=0.3)
     plt.tight_layout()
-    plt.show()
+    if fig_path is None:
+        plt.show()
+    else:
+        os.makedirs(os.path.dirname(fig_path) or ".", exist_ok=True)
+        fig.savefig(fig_path, dpi=110)
+        plt.close(fig)
