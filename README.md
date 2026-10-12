@@ -50,7 +50,13 @@ jupyter lab notebooks/
 ```
 
 Building the full table takes about 1 minute and about 2 GB of RAM. Each model notebook
-builds the table automatically if `data/features.parquet` is missing.
+builds the table automatically if it is missing.
+
+**One day first, then all data.** Development was done on the first ~1 day of data, then
+scaled up to the full 12 days. To do the same, set `SUBSET_ROWS = 100_000` (~1.2 days) in the
+first cell of each notebook, or run `python scripts/build_dataset.py --nrows 100000 --out
+data/features_100000.parquet`. Subset runs use their own feature file and write to
+`results/subset_<rows>/`, so they never overwrite the full-data results.
 
 ## Method
 
