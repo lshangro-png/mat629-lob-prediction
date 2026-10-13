@@ -28,10 +28,13 @@ lob/                     shared code, used by every notebook
   training.py            training loop (early stopping on validation)
   backtest.py            non-overlapping, fee-aware backtest; threshold and hysteresis rules
   experiment.py          train → pick trading rule on val → test once → plots, saved predictions
+  walkforward.py         rolling folds (5 d train / 1 d val / 1 d test), per-fold PCA refit
   hparams.py             per-model hyperparameters
 scripts/
   build_dataset.py       build data/features.parquet from the command line
   run_model.py           train + evaluate one model over feature sets × horizons (resumable)
+  walk_forward.py        walk-forward evaluation with several seeds + seed ensemble (resumable)
+  analyze_preds.py       long/short, per-day and parameter-sensitivity checks from saved predictions
 notebooks/
   colab_runner.ipynb     one-click Colab run of everything, results kept in Google Drive
   01_build_dataset.ipynb

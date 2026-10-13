@@ -9,7 +9,7 @@ from . import config as C
 from .data import class_labels, feature_columns, target_indices
 
 
-def fit_predict_lgbm(df, meta, feature_set, params, horizon=C.HORIZON):
+def fit_predict_lgbm(df, meta, feature_set, params, horizon=C.HORIZON, seed=C.SEED):
     """Train on train targets, early-stop on val multi-logloss.
 
     Returns (p_val, p_test, y_test, targets, history) in the same shape as the
@@ -29,7 +29,7 @@ def fit_predict_lgbm(df, meta, feature_set, params, horizon=C.HORIZON):
     params = dict(params)
     early_stopping = params.pop("early_stopping_rounds", 50)
     model = lgb.LGBMClassifier(objective="multiclass", class_weight="balanced",
-                               random_state=C.SEED, verbose=-1, **params)
+                               random_state=seed, verbose=-1, **params)
     evals = {}
     model.fit(X["train"], y["train"],
               eval_set=[(X["train"], y["train"]), (X["val"], y["val"])],

@@ -17,19 +17,19 @@ from .data import CLASS_NAMES, FEATURE_SET_DESC
 MIN_TURNOVER = 20   # trading rules that barely trade on val are not eligible
 
 
-def _fit_predict(df, meta, model_name, feature_set, hp, device, horizon, num_workers):
+def _fit_predict(df, meta, model_name, feature_set, hp, device, horizon, num_workers, seed):
     """Train one model; return (p_val, p_test, y_test, targets, history, model)."""
     if model_name == "lgbm":
         from .baselines import fit_predict_lgbm
         p_val, p_test, y_test, targets, history = fit_predict_lgbm(
-            df, meta, feature_set, hp["params"], horizon)
+            df, meta, feature_set, hp["params"], horizon, seed)
         return p_val, p_test, y_test, targets, history, None
 
     from .loaders import make_loaders
     from .models import MODELS
     from .training import fit, predict_proba, set_seed
 
-    set_seed(C.SEED)
+    set_seed(seed)
     loaders, targets, class_w, n_features = make_loaders(
         df, meta, feature_set, hp["seq_len"], hp["batch_size"], device, num_workers, horizon)
     model = MODELS[model_name](n_features, **hp["model_kwargs"]).to(device)
@@ -41,7 +41,8 @@ def _fit_predict(df, meta, model_name, feature_set, hp, device, horizon, num_wor
 
 
 def run_experiment(df, meta, model_name, feature_set, hp, device=None, horizon=C.HORIZON,
-                   fee=C.FEE, num_workers=2, plot=True, fig_path=None, pred_path=None):
+                   fee=C.FEE, num_workers=2, plot=True, fig_path=None, pred_path=None,
+                   seed=C.SEED):
     """`hp`: one entry of lob.hparams.HPARAMS. `fig_path`: save the figure there
     instead of showing it. `pred_path`: save val/test probabilities (.npz) so
     other trading rules can be evaluated later without retraining."""
@@ -50,7 +51,7 @@ def run_experiment(df, meta, model_name, feature_set, hp, device=None, horizon=C
     print("=" * 100 + f"\n{title}\n" + "=" * 100)
 
     p_val, p_test, y_test, targets, history, model = _fit_predict(
-        df, meta, model_name, feature_set, hp, device, horizon, num_workers)
+        df, meta, model_name, feature_set, hp, device, horizon, num_workers, seed)
 
     if pred_path is not None:
         os.makedirs(os.path.dirname(pred_path) or ".", exist_ok=True)
@@ -60,7 +61,7 @@ def run_experiment(df, meta, model_name, feature_set, hp, device=None, horizon=C
 
     summary, curves = evaluate(df, p_val, p_test, y_test, targets, horizon, fee)
     summary = {"model": model_name, "feature_set": feature_set, "horizon": horizon,
-               "best_epoch": history.get("best_epoch"), **summary}
+               "seed": seed, "best_epoch": history.get("best_epoch"), **summary}
     if plot:
         _plot(title, history, y_test, p_test.argmax(1), curves, horizon, fee, fig_path)
     return summary, model, history
