@@ -1,0 +1,422 @@
+% =====================================================================
+% Updated sections for the MATH 629 report (report_v3).
+% Each block below REPLACES the section of the same number in report_v3.
+% Sections 1, 2 and the appendices' literature content are unchanged.
+% Section 7 is in section7_results.tex.
+% Preamble needs: \usepackage{booktabs, graphicx, amsmath}
+% \cite keys (cont2014, kyle1985, gould2013, leeready1991, amihud2002) are
+% placeholders: replace them with the keys in your .bib (refs [4],[13],[7],[14],[2]).
+% =====================================================================
+
+
+% =====================================================================
+% REPLACES: Abstract
+% =====================================================================
+\begin{abstract}
+We study whether deep learning models can extract economically meaningful
+short-horizon signals from high-frequency cryptocurrency limit order book (LOB)
+data, and whether PCA compression and cross-asset features help. Using 1,030,551
+one-second Bitcoin--Ethereum LOB snapshots from 7--19 April 2021, we build a single
+feature pipeline (raw or PCA-compressed LOB depth, cross-asset market state and six
+microstructure factors). On it we evaluate a Residual CNN, a bidirectional LSTM, a
+Transformer and a LightGBM baseline under one protocol: a purged
+train/validation/test split, trading rules chosen on validation only, and a
+non-overlapping backtest with a 1.5\,bp fee.
+
+All models show a weak but consistent directional signal (directional F1
+0.44--0.47), although their accuracy is no better than always predicting the majority
+Flat class. Trading every prediction loses 39--49\%, and confidence thresholds
+selected out of sample leave almost no trades. A hysteresis rule with separate entry
+and exit levels makes the signal profitable under the backtest's assumptions. Over six
+walk-forward test days, a seed-averaged CNN earns $+3.1\%$ to $+10.0\%$ per day
+against a buy-and-hold mean of $-1.6\%$. However, this profit disappears when
+execution is delayed by one to three seconds. The signal is real but decays within about
+a second, so we find no tradable edge at one-second resolution after costs. Longer
+prediction horizons (30--300\,s) do not help, and the deep architectures add little
+directional skill over the LightGBM baseline.
+\end{abstract}
+
+
+% =====================================================================
+% REPLACES: Section 3 Research Questions
+% (RQ1-RQ4 unchanged in substance; RQ4 made precise, RQ5 added)
+% =====================================================================
+\section{Research Questions}
+\label{sec:rq}
+This project addresses the following questions:
+\begin{description}
+  \item[RQ1.] Can deep learning architectures (CNN, LSTM, Transformer) extract
+  directional signals from one-second cryptocurrency LOB data at a 10-second horizon,
+  and do they outperform a non-sequential gradient-boosting baseline?
+  \item[RQ2.] Does PCA-based compression of raw LOB features improve prediction and
+  trading performance compared with using the raw order-book features directly?
+  \item[RQ3.] Do market state variables (rolling volatility, momentum, cross-asset ETH
+  signals) and classic microstructure factors improve short-horizon prediction?
+  \item[RQ4.] Can the models generate returns after a 1.5\,bp transaction cost when every
+  trading parameter is chosen out of sample, and does any such return survive realistic
+  execution delays?
+  \item[RQ5.] How do the prediction horizon (10--300\,s) and the trading rule (argmax,
+  confidence threshold, hysteresis) affect economic performance?
+\end{description}
+
+
+% =====================================================================
+% REPLACES: Section 4 Data (4.1-4.3)
+% =====================================================================
+\section{Data}
+\label{sec:data}
+
+\subsection{Source and Coverage}
+We use the \emph{High-Frequency Crypto Limit Order Book Data} dataset on
+Kaggle\footnote{\url{https://www.kaggle.com/datasets/martinsn/high-frequency-crypto-limit-order-book-data}}, which provides
+one-second LOB snapshots for BTC, ETH and ADA. We use the full BTC and ETH files.
+Timestamps are floored to the second (keeping the last snapshot within a second), and
+the two assets are inner-joined on that second. After dropping rows whose rolling
+features are not yet defined, 1,030,551 aligned snapshots remain, covering
+7 April 2021 11:34 UTC to 19 April 2021 09:54 UTC (about 12 days).
+
+Each BTC snapshot records 15 levels on each side: bid distances $\{d^b_i\}_{i=0}^{14}$,
+ask distances $\{d^a_i\}_{i=0}^{14}$, bid notionals $\{v^b_i\}_{i=0}^{14}$ and ask notionals
+$\{v^a_i\}_{i=0}^{14}$, i.e.\ 60 LOB features. Here \emph{distance} is the relative offset of
+level $i$ from the mid-price and \emph{notional} is the dollar value resting at that level.
+From ETH we use the mid-price, spread and level-0 notionals.
+
+\subsection{Label Construction}
+For a horizon of $h$ seconds the target is the forward mid-price return
+\begin{equation}
+  r^{(h)}_t = \frac{p_{t+h} - p_t}{p_t},
+  \label{eq:fwdret}
+\end{equation}
+where $p_{t+h}$ is looked up \emph{by timestamp}, not by row offset. The feed has gaps, so
+``$h$ rows later'' is not always ``$h$ seconds later''. Rows whose future timestamp is
+missing are never used as targets. Labels are three-class:
+\begin{equation}
+  y_t =
+  \begin{cases}
+    \text{Up}   & \text{if } r^{(h)}_t > +\delta_h,\\
+    \text{Down} & \text{if } r^{(h)}_t < -\delta_h,\\
+    \text{Flat} & \text{otherwise.}
+  \end{cases}
+  \label{eq:label}
+\end{equation}
+The main horizon is $h=10$\,s with $\delta_{10} = 1.5\times10^{-4}$, which gives about
+21\% Up, 57\% Flat and 21\% Down. For the horizon study (Section~\ref{sec:horizon}) we also
+build labels for $h \in \{30, 60, 300\}$\,s with $\delta_h = 3\times10^{-4}$, the round-trip
+cost, so that an Up label marks a move that is still profitable after paying to enter and
+exit. The share of Flat labels falls with the horizon (43.1\%, 35.9\%, 24.4\% and 10.7\% of
+the test set at 10, 30, 60 and 300\,s).
+
+\subsection{Train--Validation--Test Split}
+\label{sec:split}
+We use a strictly chronological 70/15/15 split: training (7 April 11:34 to about
+15 April 20:00), validation (to about 17 April 15:00) and test (to 19 April 09:54). The
+validation split is used for early stopping and for choosing every trading parameter.
+The test split is evaluated once.
+
+Instead of a fixed embargo of 10 rows, we \emph{purge} by time. A row is a valid target
+only if its whole label window $[t, t+h]$ lies inside its own split. No training label is
+then computed from validation or test prices, and no validation label from test prices,
+for any horizon $h$. Input windows may reach back across a split boundary. This is
+harmless, because all features are backward-looking.
+
+To check that results do not depend on this single test window, Section~\ref{sec:walkforward}
+also uses \emph{walk-forward} folds. The data are cut into 24-hour blocks from the first
+timestamp. Fold $k$ trains on blocks $k,\dots,k+4$, validates on block $k+5$ and tests on
+block $k+6$, giving six disjoint test days (13--18 April). Each fold has about 432k
+training, 86k validation and 86k test targets.
+
+
+% =====================================================================
+% REPLACES: Section 5.1 Feature Engineering Pipeline (5.1.1-5.1.6)
+% (5.1.1 and 5.1.2 are unchanged in substance and kept short here)
+% =====================================================================
+\subsection{Feature Engineering Pipeline}
+\label{sec:features}
+A single pipeline produces one feature table that all models read, so every model sees
+identical features, labels and splits.
+
+\subsubsection{Stage 1: Raw LOB Features}
+The 60 BTC LOB features (distances and notionals at 15 levels per side) form the base
+input and preserve the full depth profile of the book.
+
+\subsubsection{Stage 2: Market State Features}
+Fifteen features capture BTC and ETH short-term dynamics and their interaction:
+\begin{itemize}
+  \item BTC: spread, level-0 order imbalance, rolling volatility and momentum of log
+  returns (10\,s and 60\,s windows);
+  \item ETH: the same six features from the ETH book;
+  \item Cross-asset: BTC--ETH momentum difference (10\,s, 60\,s) and BTC/ETH volatility
+  ratio (10\,s).
+\end{itemize}
+
+\subsubsection{Stage 3: Classic Microstructure Factors}
+Six factors from the microstructure literature yield 13 columns:
+\begin{enumerate}
+  \item \textbf{Queue imbalance} \cite{cont2014}: exponentially weighted imbalance over
+  five levels, $\mathrm{QI}_t = \sum_{i=0}^{4} w_i \frac{v^b_i - v^a_i}{v^b_i + v^a_i}$ with
+  $w_i \propto e^{-0.5 i}$, $\sum_i w_i = 1$.
+  \item \textbf{Order flow imbalance (OFI)} \cite{cont2014}:
+  $\mathrm{OFI}_t = e^b_t - e^a_t$ with
+  $e^b_t = v^b_{0,t}\mathbb{1}[P^b_t \ge P^b_{t-1}] - v^b_{0,t-1}\mathbb{1}[P^b_t \le P^b_{t-1}]$
+  and $e^a_t$ defined symmetrically, plus 10\,s and 60\,s running sums. Because the data
+  store distances rather than prices, the best bid and ask prices are rebuilt as
+  $P^b_t = p_t(1 + d^b_{0,t})$ and $P^a_t = p_t(1 + d^a_{0,t})$ and rounded to the
+  \$0.01 tick before comparison. Comparing distances directly would misclassify every
+  mid-price move as a queue change.
+  \item \textbf{Kyle's $\lambda$} \cite{kyle1985}: rolling 60\,s regression slope of the log
+  return on OFI, $\widehat{\mathrm{Cov}}(r,\mathrm{OFI}) / \widehat{\mathrm{Var}}(\mathrm{OFI})$.
+  \item \textbf{Depth ratio} \cite{gould2013}: ask-to-bid notional ratio over the top
+  10 levels, the corresponding imbalance, and a 10\,s rolling mean of the ratio.
+  \item \textbf{Tick sign} \cite{leeready1991}: sign of the most recent non-zero mid-price
+  return, forward-filled, plus 10\,s and 60\,s running sums.
+  \item \textbf{Amihud illiquidity} \cite{amihud2002}: $|r_t|$ divided by the top-5-level
+  book notional (book depth stands in for traded volume), plus its 60\,s rolling mean.
+\end{enumerate}
+
+\subsubsection{Stage 4: Normalization}
+Every feature is standardised with a backward-looking rolling $z$-score over the last
+3,600 seconds (minimum 60 observations),
+\begin{equation}
+  \tilde{x}_{t,j} = \operatorname{clip}\!\left(\frac{x_{t,j} - \hat\mu_{t,j}}{\hat\sigma_{t,j}},\; -10,\; 10\right),
+  \label{eq:zscore}
+\end{equation}
+where $\hat\mu_{t,j}$ and $\hat\sigma_{t,j}$ use observations $t-3599,\dots,t$ only, so no
+future information enters. Two details matter. First, no additive constant is used in the
+denominator, and windows with $\hat\sigma_{t,j}=0$ map to 0. Amihud and Kyle's $\lambda$ are
+$\mathcal{O}(10^{-10})$, and an $\varepsilon = 10^{-8}$ (as in an earlier version) squashes
+them to zero. Second, values are clipped at $\pm 10$ because near-constant columns, such
+as a spread pinned at one tick, otherwise produce extreme values whenever they move.
+
+\subsubsection{Stage 5: PCA Compression}
+A \texttt{StandardScaler} and PCA are fitted on the 60 normalized LOB features of the
+\emph{training rows only} and applied to all rows. About 30 components are needed for
+90\% of the variance. We keep the components with eigenvalue above one (Kaiser
+criterion), capped at 10, which retain about 61\% of the variance. In the walk-forward
+evaluation, the scaler and PCA are refitted on each fold's training days.
+
+\subsubsection{Feature Sets}
+Three feature sets are used throughout, with the same definition for every model
+(Table~\ref{tab:featuresets}).
+
+\begin{table}[htbp]
+\centering
+\caption{Feature sets. All are columns of one feature table with 1,030,551 rows.}
+\label{tab:featuresets}
+\begin{tabular}{lll r}
+\toprule
+Name & Short name & Feature groups & Features \\
+\midrule
+Full      & \texttt{full}      & PCA(10) + Market(15) + Classic(13) & 38 \\
+No PCA    & \texttt{no\_pca}    & Raw LOB(60) + Market(15) + Classic(13) & 88 \\
+No Market & \texttt{no\_market} & PCA(10) + Classic(13) & 23 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% =====================================================================
+% REPLACES: the "Key hyperparameters" paragraphs of 5.2.1-5.2.3
+% and ADDS 5.2.4. The architecture bullet lists of 5.2.1-5.2.3 are
+% unchanged and can be kept as they are.
+% =====================================================================
+
+% --- in 5.2 (intro), replace the loss paragraph with: ---
+All models output a probability distribution
+$\hat{\mathbf p}_t = (\hat p_{\downarrow}, \hat p_0, \hat p_{\uparrow})$ and are trained with
+class-weighted cross-entropy,
+\begin{equation}
+  \mathcal{L} = -\sum_{c} w_c\, \mathbb{1}[y=c] \log \hat p_c, \qquad
+  w_c = \frac{N}{3 N_c},
+\end{equation}
+where $N_c$ is the number of training targets in class $c$. All neural networks use
+AdamW, gradient clipping at norm 1.0, shuffled mini-batches, and \emph{early stopping on
+validation loss}. The weights of the best validation epoch are restored.
+
+% --- 5.2.1 Residual CNN: replace the "Key hyperparameters" paragraph with: ---
+\emph{Key hyperparameters:} 64 filters, $T=10$, dropout 0.3, learning rate $10^{-4}$, weight
+decay $10^{-2}$, cosine annealing over at most 50 epochs, patience 10, batch size 256.
+Total parameters: 118,851 for $F=38$.
+
+% --- 5.2.2 Bidirectional LSTM: replace the "Key hyperparameters" paragraph with: ---
+\emph{Key hyperparameters:} $T=10$, hidden size 32 per direction, 2 layers, dropout 0.4,
+learning rate $10^{-4}$, weight decay $2\times10^{-3}$, cosine annealing over at most
+40 epochs, patience 6, batch size 256.
+
+% --- 5.2.3 Transformer: replace the "Key hyperparameters" paragraph with: ---
+\emph{Key hyperparameters:} $T=30$, $d_{\text{model}}=64$, 4 heads, 3 pre-norm layers,
+feed-forward width 128, dropout 0.1, OneCycleLR with maximum learning rate $10^{-3}$
+(10\% warm-up, cosine decay), weight decay $10^{-4}$, at most 30 epochs, patience 6,
+batch size 512. Total parameters: 105,219 for $F=38$.
+
+% --- NEW subsection after 5.2.3: ---
+\subsubsection{LightGBM Baseline}
+To measure what the sequence architectures add, we train a gradient-boosted tree
+classifier (LightGBM) on the features of the \emph{current second only}, with no look-back
+window. It uses up to 2,000 trees, learning rate 0.05, 31 leaves, a minimum of 200
+samples per leaf, 80\% row and column subsampling, balanced class weights, and early
+stopping on validation multi-class log-loss (50 rounds).
+
+
+% =====================================================================
+% REPLACES: Section 5.3 Backtesting Framework (5.3.1-5.3.4)
+% =====================================================================
+\subsection{Backtesting Framework}
+\label{sec:backtest}
+
+\subsubsection{Positions, Costs and Returns}
+A trading rule maps each prediction to a position $s_t \in \{-1, 0, +1\}$ (short, flat,
+long), using the full account value without leverage. The position is held for exactly $h$
+seconds and the net return of the step is
+\begin{equation}
+  r^{\text{net}}_t = s_t\, r^{(h)}_t - c\,|s_t - s_{t-1}|,
+  \label{eq:netret}
+\end{equation}
+with $c = 1.5$\,bp per unit of position change. A reversal from $-1$ to $+1$ therefore pays
+$2c$, and the first entry is also charged. Wealth compounds as
+$W_T = \prod_t (1 + r^{\text{net}}_t)$. Execution is at the mid-price of the snapshot
+from which the features were computed. Section~\ref{sec:delay} tests this assumption by
+delaying execution.
+
+\subsubsection{Non-Overlapping Steps}
+Predictions are made every second, but each label covers $h$ seconds. Using every
+prediction would count each price move up to $h$ times. We therefore keep a subset of
+target rows such that each is at least $h$ seconds after the previous one. The positions
+are taken at these rows and earn non-overlapping returns. For $h=10$ the test split has
+15,457 such steps. Sharpe ratios are annualised with
+$\sqrt{365 \times 24 \times 3600 / h}$ ($\approx 1776$ at $h=10$\,s). These values are
+only comparable across models in this study, not with daily-frequency strategies.
+
+\subsubsection{Trading Rules}
+Let $\hat p_{\downarrow}$ and $\hat p_{\uparrow}$ be the predicted probabilities of Down and Up.
+\begin{itemize}
+  \item \textbf{Argmax}: $s_t = \arg\max_c \hat p_c - 1$, i.e.\ trade every prediction.
+  \item \textbf{Threshold}: $s_t = +1$ if $\hat p_{\uparrow} > \theta$, $s_t = -1$ if
+  $\hat p_{\downarrow} > \theta$, otherwise $0$.
+  \item \textbf{Hysteresis}: open a long (short) position when $\hat p_{\uparrow}$
+  ($\hat p_{\downarrow}$) exceeds an \emph{enter} level $\theta_{\text{in}}$ and is the larger of
+  the two directional probabilities. Keep the position while its probability stays at or
+  above an \emph{exit} level $\theta_{\text{out}} < \theta_{\text{in}}$, and reverse directly
+  when the opposite probability exceeds $\theta_{\text{in}}$. The lower exit level avoids
+  paying to close and reopen a position on every small dip in confidence.
+\end{itemize}
+
+\subsubsection{Out-of-Sample Parameter Selection}
+$\theta$ is swept over 23 values in $[0.35, 0.90]$, and
+$(\theta_{\text{in}}, \theta_{\text{out}})$ over $\theta_{\text{in}} \in \{0.40, 0.45,
+\dots, 0.90\}$ and $\theta_{\text{out}} \in \{0, 0.05, \dots, \theta_{\text{in}} - 0.05\}$.
+Both sweeps are run on the \emph{validation} split, and the configuration with the
+highest validation Sharpe among those with at least 20 position changes is applied once to
+the test split. An earlier version of this study selected $\theta$ on the test split, which
+inflates test performance.
+
+\subsubsection{Performance Metrics}
+\emph{Statistical:} accuracy, per-class precision, recall and F1, and directional F1,
+\begin{equation}
+  \mathrm{DirF1} = \tfrac12\left(\mathrm{F1}_{\text{Down}} + \mathrm{F1}_{\text{Up}}\right),
+\end{equation}
+which ignores the dominant Flat class. Accuracy is reported next to the accuracy of always
+predicting Flat.
+\emph{Economic:} cumulative net return, annualised Sharpe ratio, maximum drawdown, win rate
+on active steps, and turnover $\sum_t |s_t - s_{t-1}|$.
+\emph{Robustness:} the test return over neighbouring threshold values, the split of P\&L
+into long and short positions and by calendar day, results across walk-forward folds and
+seeds, and the test return when execution is delayed by $d \in \{1,2,3,5\}$ seconds.
+
+
+% =====================================================================
+% REPLACES: Section 6 Experimental Setup (text + Table 2)
+% =====================================================================
+\section{Experimental Setup}
+\label{sec:setup}
+Neural networks are trained on Google Colab with an NVIDIA Tesla T4 GPU, and LightGBM on
+the Colab CPU. All code (feature pipeline, models, backtest and the scripts that produce
+every table) is shared across models, so differences in results come from the models, not
+from preprocessing or evaluation.
+
+Experiments on the main split use seed 42. They cover all four models and three feature
+sets at $h=10$\,s, and the Full feature set at $h\in\{30,60,300\}$\,s (LightGBM: all
+feature sets). The walk-forward evaluation trains the CNN with seeds 42, 43 and 44 plus
+a seed-averaged ensemble, and LightGBM with seed 42, on six folds at $h=10$\,s.
+Development was first done on the first $\approx$1.2 days of data (100,000 rows) and then
+scaled to the full dataset. That development subset lies entirely inside the main
+training split.
+
+\begin{table}[htbp]
+\centering
+\caption{Hyperparameters by model. All neural networks use AdamW, gradient clipping at
+1.0, shuffled batches, class-weighted cross-entropy and early stopping on validation
+loss.}
+\label{tab:hparams}
+\begin{tabular}{lcccc}
+\toprule
+ & CNN & BiLSTM & Transformer & LightGBM \\
+\midrule
+Input window $T$ & 10 & 10 & 30 & 1 \\
+Width            & 64 / 128 filters & $32\times2$ & $d_{\text{model}}=64$ & 31 leaves \\
+Depth            & 2 residual blocks & 2 layers & 3 layers & $\le$ 2,000 trees \\
+Dropout          & 0.3 & 0.4 & 0.1 & -- \\
+Learning rate    & $10^{-4}$ & $10^{-4}$ & $10^{-3}$ (max) & 0.05 \\
+Schedule         & cosine & cosine & OneCycle & -- \\
+Weight decay     & $10^{-2}$ & $2\times10^{-3}$ & $10^{-4}$ & $\lambda_2 = 1$ \\
+Batch size       & 256 & 256 & 512 & -- \\
+Max epochs       & 50 & 40 & 30 & -- \\
+Early stopping   & val loss, 10 & val loss, 6 & val loss, 6 & val log-loss, 50 \\
+Parameters ($F=38$) & 118,851 & 45,827 & 105,219 & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% =====================================================================
+% REPLACES: Section 8 Conclusion
+% =====================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+We built a single, leakage-controlled pipeline for one-second BTC limit order book
+prediction and evaluated three deep architectures and a gradient-boosting baseline under
+the same out-of-sample protocol. Our answers to the research questions are as follows.
+
+\begin{enumerate}
+  \item \textbf{Directional signal (RQ1).} All models learn a weak but consistent
+  directional signal: directional F1 is 0.44--0.47 on the main split and 0.41--0.47 across
+  six walk-forward folds. Accuracy (41--44\%) is no better than always predicting Flat.
+  The Transformer has the highest directional F1 (0.466). However, a LightGBM model
+  that sees only the current second matches it (0.465), so the sequence architectures add
+  little beyond the hand-crafted features.
+  \item \textbf{PCA and market features (RQ2, RQ3).} Replacing the 60 raw LOB columns by
+  10 principal components changes directional F1 by less than 0.007. Removing the
+  market-state block lowers it for every model (by up to 0.020). Cross-asset information
+  helps slightly, while PCA compression neither helps nor hurts.
+  \item \textbf{Profitability after costs (RQ4).} Trading every prediction loses 39--49\%
+  at 1.5\,bp. Confidence thresholds chosen on validation leave almost no trades. In
+  particular, the $+2.7\%$ CNN result of our earlier draft does not survive out-of-sample
+  threshold selection. A hysteresis rule makes the signal profitable under instantaneous
+  execution. The CNN earns $+26.8\%$ on the main test window, and a 3-seed CNN ensemble is
+  positive on all six walk-forward test days (mean $+7.0\%$ per day against $-1.6\%$ for
+  buy-and-hold). This profit, however, is concentrated in the first second after each
+  snapshot. With a one-second execution delay the ensemble's mean daily return falls to
+  $+0.9\%$, and by three seconds every model's return is negative. We also found that ETH
+  snapshots are up to 0.74\,s later than the BTC snapshots they are joined with in 24.5\%
+  of seconds, a small look-ahead that any realistic delay removes.
+  \item \textbf{Horizon and trading rule (RQ5).} Longer horizons (30, 60, 300\,s) do not
+  improve directional skill. Their occasional profits come from the 18 April sell-off and
+  are fragile to the choice of thresholds. The trading rule matters far more than the
+  architecture: separating entry from exit turned every model's 10\,s signal from large
+  losses into gains under the backtest's assumptions.
+\end{enumerate}
+
+Overall, the LOB contains genuine predictive information about the next mid-price move,
+but at one-second resolution that information decays faster than it can be traded after
+a 1.5\,bp fee. The most consequential choices in this study were methodological:
+out-of-sample selection of trading parameters, walk-forward testing, and modelling
+execution delay.
+
+\paragraph{Limitations and future work.} The data covers 12 days in a single month, and
+all test days fall in one week that contains one large sell-off. The backtest fills at the
+mid-price with a flat fee and full-capital positions, ignoring queue position, adverse
+selection, market impact and borrowing costs for short positions. Only the CNN and
+LightGBM were evaluated walk-forward. Natural next steps are (i) sub-second or
+event-time data, to measure whether the decaying signal can be captured with realistic
+latency; (ii) explicit maker/taker execution models with queue position; (iii) using
+traded volume (the \texttt{buys}/\texttt{sells} fields) for order-flow and Amihud factors;
+and (iv) longer samples covering several market regimes.

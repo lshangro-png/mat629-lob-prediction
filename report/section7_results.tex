@@ -11,36 +11,13 @@
 \subsection{Evaluation Protocol}
 \label{sec:protocol}
 
-All results in this section use one shared pipeline and one backtest, so that the
-models are directly comparable. Three properties of the protocol matter for reading
-the numbers.
-
-\begin{enumerate}
-  \item \textbf{Three-way chronological split with purging.} The 1,030,551 aligned
-  snapshots are split 70/15/15 into training (04-07 11:34 to 04-15 20:00 UTC), validation
-  (to 04-17 14:57) and test (to 04-19 09:54). A row is used as a target only if its whole
-  label window $[t, t+h]$ lies inside its own split. Early stopping uses the
-  \emph{validation} loss.
-  \item \textbf{Trading rules are chosen on validation only.} Every tunable trading
-  parameter (the confidence threshold $\theta$ and the hysteresis enter/exit levels) is
-  selected by validation Sharpe and then applied once to the test split. An earlier draft
-  of this project selected $\theta$ on the test split; those numbers are not reported
-  here.
-  \item \textbf{Fee-aware, non-overlapping backtest.} A position $q_t\in\{-1,0,+1\}$ (full
-  capital, no leverage) is held for exactly $h$ seconds and earns the mid-price return
-  $r_{t,h}$. Steps do not overlap. The net step return is
-  $q_t r_{t,h} - c\,|q_t - q_{t-1}|$ with $c = 1.5$\,bp, so a reversal pays twice, and
-  wealth compounds multiplicatively. Execution is at the mid-price of the same snapshot
-  the features come from. Section~\ref{sec:delay} relaxes this assumption.
-\end{enumerate}
-
-Three trading rules map the predicted class probabilities $(p_\downarrow, p_0, p_\uparrow)$
-to positions: \emph{argmax} trades every prediction; \emph{threshold} goes long if
-$p_\uparrow > \theta$, short if $p_\downarrow > \theta$, and is otherwise flat;
-\emph{hysteresis} opens a position when its class probability exceeds an \emph{enter}
-level, keeps it while that probability stays above a lower \emph{exit} level, and reverses
-directly on a strong opposite signal. A LightGBM classifier on the current second's
-features only serves as a non-deep baseline.
+All results use the shared pipeline of Section~\ref{sec:features}, the purged
+train/validation/test split of Section~\ref{sec:split} (test: about 17 April 15:00 to
+19 April 09:54 UTC, 154,544 targets at $h=10$\,s), and the backtest of
+Section~\ref{sec:backtest}. Early stopping and every trading parameter (the threshold $\theta$
+and the hysteresis levels) are chosen on the validation split, and the test split is
+evaluated once. Execution is at the mid-price of the snapshot the features come from;
+Section~\ref{sec:delay} relaxes this assumption.
 
 % ---------------------------------------------------------------------
 \subsection{Classification Performance}
