@@ -187,11 +187,61 @@ grid of neighbouring (enter, exit) values.
   every horizon. The deep models' advantage, mainly the CNN at 10 s, shows up only in how
   well their probabilities rank trades.
 
-**Caveats.** There is a single 1.8-day test window, dominated by one sell-off. Many
+**Caveats** (addressed in the walk-forward section below). There is a single 1.8-day test window, dominated by one sell-off. Many
 configurations were compared on it (24 here, plus the earlier runs), so the best one is
 optimistically selected. Execution is assumed at the mid-price with no latency, and 2,249
 position changes in 1.8 days is very active. Walk-forward evaluation over several windows
 and multiple seeds is needed before calling any of these results an edge.
+
+### Walk-forward evaluation and reality checks
+
+To test whether the 10-second CNN + hysteresis result holds beyond one test window, the
+model is retrained on **rolling folds**: 5 days train → 1 day validation → 1 day test, moved
+forward one day at a time (6 test days, 04-13 → 04-19). The PCA is refitted on each fold's
+training days, the trading rule is picked on each fold's validation day, and the CNN is
+trained with 3 seeds plus a seed-averaged ensemble. Files:
+[`results/walk_forward_cnn.csv`](results/walk_forward_cnn.csv),
+[`results/walk_forward_lgbm.csv`](results/walk_forward_lgbm.csv).
+
+| Hysteresis return per test day | 04-13 | 04-14 | 04-15 | 04-16 | 04-17 | 04-18 | mean | days > 0 |
+|---|---|---|---|---|---|---|---|---|
+| CNN, 3-seed ensemble | +4.2% | +3.1% | +9.8% | +9.0% | +6.2% | +10.0% | +7.0% | 6 / 6 |
+| CNN, single seeds (18 runs) | | | | | | | +7.7% | 18 / 18 |
+| LightGBM `no_pca` (1 seed) | +3.2% | +8.9% | +7.9% | +5.9% | −0.8% | +11.3% | +6.1% | 5 / 6 |
+| LightGBM `full` (1 seed) | −2.2% | +1.0% | +12.4% | +9.3% | −2.7% | +10.8% | +4.8% | 4 / 6 |
+| Buy & hold | +2.3% | −3.0% | −3.0% | +0.7% | −10.9% | +4.5% | −1.6% | |
+
+On paper this looks like a strong, consistent edge. Two checks show it is **not tradable**:
+
+**1. Execution delay** ([`scripts/check_walk_forward.py`](scripts/check_walk_forward.py)).
+The backtest assumes that we trade at the mid-price of the same snapshot the features were
+computed from. Delaying execution by d seconds (same model, same thresholds):
+
+| Mean daily return | 0 s | 1 s | 2 s | 3 s | 5 s |
+|---|---|---|---|---|---|
+| CNN ensemble | +7.0% | +0.9% | −1.9% | −4.0% | −6.8% |
+| CNN single seeds | +7.7% | +2.3% | −1.0% | −2.9% | −4.9% |
+| LightGBM | +5.2% | −4.3% | −4.6% | −6.6% | −9.5% |
+
+Per day: [`results/walk_forward_delay_cnn_ensemble.csv`](results/walk_forward_delay_cnn_ensemble.csv).
+The whole profit sits in the first ~1 second after each snapshot. The models do predict the
+next move of the mid-price, but that move comes almost immediately. Capturing it would need
+sub-second execution at the mid, with no queueing, no adverse selection and a 1.5 bps fee.
+The 1-second snapshot data cannot show whether that is achievable.
+
+**2. BTC/ETH timestamp alignment.** BTC and ETH snapshots are joined on the floored second.
+Within a matched second the ETH snapshot is taken **later** than the BTC one 24.5% of the time
+(up to 0.74 s later; 19.7% of seconds are > 0.1 s later). The ETH features therefore sometimes
+contain information from slightly after the BTC mid they are compared with. This is a small
+look-ahead leak in every feature set that uses market features (`full`, `no_pca`). A 1-second
+execution delay also removes this leak, which is one more reason to read the delayed numbers
+as the realistic ones.
+
+**Conclusion.** Under realistic execution assumptions, none of the models or trading rules
+here has a demonstrated edge after a 1.5 bps fee. What the models learn is genuine
+sub-second order-book information (they predict direction better than chance, and the
+hysteresis rule turns that into profit when execution is instantaneous). That signal decays
+within about a second, faster than this data can support trading on.
 
 <details>
 <summary>Development run: first ~1.2 days (<code>SUBSET_ROWS = 100_000</code>)</summary>
