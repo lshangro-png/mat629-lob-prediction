@@ -250,6 +250,7 @@ same models and thresholds). Walk-forward rows: mean over six test days (share o
 positive days in brackets).}
 \label{tab:delay}
 \small
+\setlength{\tabcolsep}{5pt}
 \begin{tabular}{lrrrrr}
 \toprule
  & $d=0$ & $d=1$\,s & $d=2$\,s & $d=3$\,s & $d=5$\,s \\
@@ -257,7 +258,7 @@ positive days in brackets).}
 \multicolumn{6}{l}{\emph{Walk-forward (mean per test day)}} \\
 CNN ensemble  & $+7.0\%$ (6/6) & $+0.9\%$ (4/6) & $-1.9\%$ (3/6) & $-4.0\%$ (2/6) & $-6.8\%$ (0/6) \\
 CNN single seeds & $+7.7\%$ & $+2.3\%$ & $-1.0\%$ & $-2.9\%$ & $-4.9\%$ \\
-LightGBM (Full + No PCA) & $+4.9\%$ & $-3.6\%$ & $-4.2\%$ & $-6.3\%$ & $-9.0\%$ \\
+LightGBM (both sets) & $+4.9\%$ & $-3.6\%$ & $-4.2\%$ & $-6.3\%$ & $-9.0\%$ \\
 \midrule
 \multicolumn{6}{l}{\emph{Main split (test 04-17 to 04-19)}} \\
 CNN               & $+26.8\%$ & $+4.7\%$ & $-5.2\%$ & $-9.4\%$ & $-10.1\%$ \\
