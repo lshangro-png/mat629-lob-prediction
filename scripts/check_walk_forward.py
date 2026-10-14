@@ -1,6 +1,7 @@
 """Sanity checks for the walk-forward results (no retraining).
 
     python scripts/check_walk_forward.py --model cnn --work-dir /content/drive/MyDrive/mat629-lob
+    python scripts/check_walk_forward.py --single-window --work-dir ...   # main-split runs
 
 1. Execution delay. The backtest assumes we trade at the mid of the same
    snapshot the features come from. Here the position for the step starting at
@@ -13,6 +14,7 @@
    ETH features peek slightly into the future relative to the BTC mid.
 """
 import argparse
+import glob
 import os
 import sys
 
@@ -24,6 +26,41 @@ import pandas as pd  # noqa: E402
 from lob import config as C  # noqa: E402
 from lob.backtest import backtest, nonoverlap_steps, positions_hysteresis  # noqa: E402
 from lob.features import find_data_dir  # noqa: E402
+
+
+def delayed_returns(test_rows, probs, ret_all, enter, exit_, horizon, delays):
+    """Hysteresis test return when the position for step t uses the prediction of row t - d."""
+    prob_of_row = dict(zip(test_rows.tolist(), range(len(test_rows))))
+    out = {}
+    for dl in delays:
+        ok = np.array([t - dl in prob_of_row for t in test_rows])
+        rows_ok = test_rows[ok]
+        step_rows = rows_ok[nonoverlap_steps(rows_ok, horizon)]
+        p = probs[[prob_of_row[t - dl] for t in step_rows]]
+        pos = positions_hysteresis(p, enter, exit_)
+        out[f"delay_{dl}s"] = backtest(pos, ret_all[step_rows], C.FEE, horizon)["total_return"]
+    return out
+
+
+def single_window_check(work_dir, horizon, delays):
+    """Same delay test for the runs on the main 70/15/15 split (results/h<h>/)."""
+    res_dir = os.path.join(work_dir, "results", f"h{horizon}")
+    ret_all = pd.read_parquet(os.path.join(work_dir, "data", "features.parquet"),
+                              columns=[f"future_return_{horizon}"]).iloc[:, 0].to_numpy()
+    rows = []
+    for csv in sorted(glob.glob(os.path.join(res_dir, "*_summary.csv"))):
+        for r in pd.read_csv(csv).to_dict("records"):
+            npz = os.path.join(res_dir, "preds", f"{r['model']}_{r['feature_set']}.npz")
+            if not os.path.exists(npz):
+                continue
+            d = np.load(npz)
+            rows.append({"model": r["model"], "feature_set": r["feature_set"],
+                         "enter": r["hy_enter"], "exit": r["hy_exit"],
+                         **delayed_returns(d["test_rows"], d["test_probs"], ret_all,
+                                           r["hy_enter"], r["hy_exit"], horizon, delays)})
+    print(f"\nHysteresis test return on the main split (horizon {horizon}s), "
+          f"execution delayed by d seconds:")
+    print(pd.DataFrame(rows).round(4).to_csv(index=False))
 
 
 def delay_check(work_dir, model, horizon, delays):
@@ -45,18 +82,10 @@ def delay_check(work_dir, model, horizon, delays):
             d = np.load(os.path.join(out_dir, "preds", f"{tag}_seed{seed}.npz"))
             test_rows, probs = d["test_rows"], d["test_probs"]
 
-        prob_of_row = dict(zip(test_rows.tolist(), range(len(test_rows))))
         out = {"fold": int(r["fold"]), "test_day": r["test_day"], "seed": seed,
                "enter": r["hy_enter"], "exit": r["hy_exit"]}
-        for dl in delays:
-            # steps whose delayed prediction row exists
-            ok = np.array([t - dl in prob_of_row for t in test_rows])
-            rows_ok = test_rows[ok]
-            st = nonoverlap_steps(rows_ok, horizon)
-            step_rows = rows_ok[st]
-            p = probs[[prob_of_row[t - dl] for t in step_rows]]
-            pos = positions_hysteresis(p, r["hy_enter"], r["hy_exit"])
-            out[f"delay_{dl}s"] = backtest(pos, ret_all[step_rows], C.FEE, horizon)["total_return"]
+        out.update(delayed_returns(test_rows, probs, ret_all, r["hy_enter"], r["hy_exit"],
+                                   horizon, delays))
         rows.append(out)
     res = pd.DataFrame(rows)
     print(f"\n1. Hysteresis test return with execution delayed by d seconds ({model}):")
@@ -91,7 +120,12 @@ def main():
     p.add_argument("--delays", nargs="+", type=int, default=[0, 1, 2, 3, 5])
     p.add_argument("--raw-dir", default=None)
     p.add_argument("--skip-timestamps", action="store_true")
+    p.add_argument("--single-window", action="store_true",
+                   help="check the runs on the main 70/15/15 split instead of walk-forward")
     a = p.parse_args()
+    if a.single_window:
+        single_window_check(a.work_dir, a.horizon, a.delays)
+        return
     delay_check(a.work_dir, a.model, a.horizon, a.delays)
     if not a.skip_timestamps:
         timestamp_check(a.raw_dir)
