@@ -224,6 +224,19 @@ computed from. Delaying execution by d seconds (same model, same thresholds):
 | LightGBM | +5.2% | −4.3% | −4.6% | −6.6% | −9.5% |
 
 Per day: [`results/walk_forward_delay_cnn_ensemble.csv`](results/walk_forward_delay_cnn_ensemble.csv).
+The same check on the main 70/15/15 split (test 04-17 → 04-19, 10 s, hysteresis) covers all
+four models ([`results/main_split_delay_h10.csv`](results/main_split_delay_h10.csv)):
+
+| Test return | 0 s | 1 s | 2 s | 3 s | 5 s |
+|---|---|---|---|---|---|
+| CNN | +26.8% | +4.7% | −5.2% | −9.4% | −10.1% |
+| LSTM | +4.5% | +1.4% | +0.4% | −0.5% | −2.1% |
+| Transformer | +3.5% | +0.9% | +0.0% | −1.0% | −1.6% |
+| LightGBM `no_pca` | +17.1% | −2.5% | −9.8% | −13.4% | −12.3% |
+
+LSTM and Transformer trade less (higher enter thresholds), so they lose less when delayed,
+but they show the same pattern: most of the profit is gone after 1 s and it is negative by 3 s.
+
 The whole profit sits in the first ~1 second after each snapshot. The models do predict the
 next move of the mid-price, but that move comes almost immediately. Capturing it would need
 sub-second execution at the mid, with no queueing, no adverse selection and a 1.5 bps fee.
