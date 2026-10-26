@@ -1,5 +1,8 @@
-# data (download from Kaggle / build with scripts/build_dataset.py)
+# data (download from Kaggle; features and results live in the DuckDB database)
 data/
+work/
+*.duckdb
+*.duckdb.wal
 *.csv
 !results/*.csv
 *.parquet

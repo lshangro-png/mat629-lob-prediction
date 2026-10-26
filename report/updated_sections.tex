@@ -329,9 +329,10 @@ seeds, and the test return when execution is delayed by $d \in \{1,2,3,5\}$ seco
 \section{Experimental Setup}
 \label{sec:setup}
 Neural networks are trained on Google Colab with an NVIDIA Tesla T4 GPU, and LightGBM on
-the Colab CPU. All code (feature pipeline, models, backtest and the scripts that produce
-every table) is shared across models, so differences in results come from the models, not
-from preprocessing or evaluation.
+the Colab CPU. The whole study is one notebook: the feature pipeline, models, backtest and
+the analyses that produce every table share the same code and exchange data through one
+DuckDB database, so differences in results come from the models, not from preprocessing or
+evaluation.
 
 Experiments on the main split use seed 42. They cover all four models and three feature
 sets at $h=10$\,s, and the Full feature set at $h\in\{30,60,300\}$\,s (LightGBM: all

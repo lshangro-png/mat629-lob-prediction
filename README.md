@@ -18,56 +18,45 @@ with `kagglehub`, or you can point it at a local folder containing `BTC_1sec.csv
 ## Repository layout
 
 ```
-lob/                     shared code, used by every notebook
-  config.py              horizon, label threshold, split fractions, fee …
-  features.py            raw CSV → features, labels, z-score, split, PCA
-  data.py                feature sets, labels, target rows
-  loaders.py             sliding-window Dataset + DataLoaders (PyTorch)
-  models.py              LOBCNN, LOBLSTM, LOBTransformer
-  baselines.py           LightGBM baseline (current-second features only)
-  training.py            training loop (early stopping on validation)
-  backtest.py            non-overlapping, fee-aware backtest; threshold and hysteresis rules
-  experiment.py          train → pick trading rule on val → test once → plots, saved predictions
-  walkforward.py         rolling folds (5 d train / 1 d val / 1 d test), per-fold PCA refit
-  hparams.py             per-model hyperparameters
-scripts/
-  build_dataset.py       build data/features.parquet from the command line
-  run_model.py           train + evaluate one model over feature sets × horizons (resumable)
-  walk_forward.py        walk-forward evaluation with several seeds + seed ensemble (resumable)
-  analyze_preds.py       long/short, per-day and parameter-sensitivity checks from saved predictions
-notebooks/
-  colab_runner.ipynb     one-click Colab run of everything, results kept in Google Drive
-  01_build_dataset.ipynb
-  02_cnn.ipynb
-  03_lstm.ipynb
-  04_transformer.ipynb
-  05_compare.ipynb       combines results/*_summary.csv
-results/h<horizon>/      per-model summary CSVs, figures, val/test probabilities
+lob_research.ipynb   the whole project in one notebook (Colab or local Jupyter)
+results/             CSV snapshots of the results quoted below
+report/              LaTeX for the report (updated sections, Section 7, figures)
 ```
+
+The notebook passes data between its steps through one **DuckDB database**, `lob.duckdb`
+(stored in Google Drive on Colab). Every step reads its inputs from the database and writes
+its outputs back, so steps can be run separately, are resumed automatically after a
+disconnect, and can be inspected with SQL.
+
+| Table | Contents |
+|---|---|
+| `features` | one row per second: time, main split, labels / returns / target flags per horizon, all features |
+| `meta` | PCA columns, explained variance, label distribution, … |
+| `runs` | one row per trained model (`scheme`, `fold`, `model`, `feature_set`, `horizon`, `seed`) with all test metrics |
+| `predictions` | P(Down / Flat / Up) for every validation and test target of every run |
+| `history` | training curves |
+| `robustness`, `delay`, `timestamp_check` | results of the robustness, execution-delay and timestamp checks |
+
+Notebook sections: 0 setup → 1 database → 2 features → 3 backtest → 4 models → 5 experiment
+runner → 6 experiments (main split, horizons, walk-forward) → 7 analysis → 8 report →
+with an optional import of results computed with the earlier script-based version (end of
+Section 5).
 
 ## Quick start
 
-**Colab:** open [`notebooks/colab_runner.ipynb`](https://colab.research.google.com/github/lshangro-png/mat629-lob-prediction/blob/main/notebooks/colab_runner.ipynb),
-select a GPU runtime, and run the setup cell, then one cell per model. Data and results are
-stored in `MyDrive/mat629-lob/`, and an interrupted run resumes where it stopped. The
-per-model notebooks (02–04) can also be opened in Colab directly for interactive work.
+**Colab:** open [`lob_research.ipynb`](https://colab.research.google.com/github/lshangro-png/mat629-lob-prediction/blob/main/lob_research.ipynb),
+select a GPU runtime, choose the steps in the `STEPS` switches of Section 0 and run all cells.
+The database lives in `MyDrive/mat629-lob/lob.duckdb`. Steps whose results are already in the
+database are skipped.
 
-**Locally:**
-
-```bash
-pip install -r requirements.txt
-python scripts/build_dataset.py            # or: --data-dir path/to/csvs
-python scripts/run_model.py --model cnn    # or open notebooks/ in Jupyter
-```
-
-Building the full table takes about 1 minute and about 2 GB of RAM. Each model notebook
-builds the table automatically if it is missing.
+**Locally:** `pip install -r requirements.txt` and open the notebook in Jupyter. On macOS,
+PyTorch and LightGBM crash when they are loaded in the same process (on Colab/Linux they
+don't), so train the neural models and LightGBM in separate kernel sessions by editing `MODELS`.
 
 **One day first, then all data.** Development was done on the first ~1 day of data, then
-scaled up to the full 12 days. To do the same, set `SUBSET_ROWS = 100_000` (~1.2 days) in the
-first cell of each notebook, or run `python scripts/build_dataset.py --nrows 100000 --out
-data/features_100000.parquet`. Subset runs use their own feature file and write to
-`results/subset_<rows>/`, so they never overwrite the full-data results.
+scaled up to the full 12 days. Set `SUBSET_ROWS = 100_000` (~1.2 days) to do the same; a subset
+run uses its own database file (`lob_subset100000.duckdb`), so it never mixes with the full
+results.
 
 ## Method
 
@@ -114,7 +103,7 @@ horizons, so an Up label is a move that is still profitable after paying to ente
 
 Full data, test split = 2021-04-17 15:00 → 04-19 09:54 UTC (154,544 targets, 15,457
 non-overlapping 10-second steps). Fee 1.5 bps. θ is chosen on validation and applied once to
-test. Run on a Colab T4 with `notebooks/colab_runner.ipynb`.
+test. Run on a Colab T4 GPU.
 
 | Model | Feature set | Test acc | Dir-F1 | Argmax return | Argmax Sharpe | θ (val) | θ return | θ Sharpe | θ turnover |
 |---|---|---|---|---|---|---|---|---|---|
@@ -167,7 +156,7 @@ thresholds chosen on validation. Buy & hold over the test window ≈ −6.6% at 
 | 300 s | Transformer | 0.323 | 0.107 | 0.372 | −11.1% | −12.3% | 21 |
 | 300 s | LightGBM | 0.443 | 0.107 | 0.476 | +18.0% | −2.4% | 18 |
 
-**Robustness of the hysteresis results** ([`scripts/analyze_preds.py`](scripts/analyze_preds.py),
+**Robustness of the hysteresis results** (notebook Section 7,
 [`results/hysteresis_robustness.csv`](results/hysteresis_robustness.csv)). For each run: the
 P&L split into long and short positions, the P&L per day, and the test return over the 3×3
 grid of neighbouring (enter, exit) values.
@@ -213,7 +202,7 @@ trained with 3 seeds plus a seed-averaged ensemble. Files:
 
 On paper this looks like a strong, consistent edge. Two checks show it is **not tradable**:
 
-**1. Execution delay** ([`scripts/check_walk_forward.py`](scripts/check_walk_forward.py)).
+**1. Execution delay** (notebook Section 7).
 The backtest assumes that we trade at the mid-price of the same snapshot the features were
 computed from. Delaying execution by d seconds (same model, same thresholds):
 
