@@ -19,7 +19,7 @@ with `kagglehub`, or you can point it at a local folder containing `BTC_1sec.csv
 
 ```
 lob_research.ipynb   the whole project in one notebook (Colab or local Jupyter)
-results/             CSV snapshots of the results quoted below
+results/             CSV exports of the database (notebook Section 8), source of the numbers below
 report/              LaTeX for the report (updated sections, Section 7, figures)
 ```
 
@@ -134,7 +134,7 @@ Buy & hold over the same test window: −6.52% (max drawdown −14.8%).
 ### Longer horizons, LightGBM baseline and the hysteresis rule
 
 Full data, `full` feature set unless noted (LightGBM also on the other two sets, see
-[`results/horizons_summary.csv`](results/horizons_summary.csv)). Hysteresis = enter/exit
+[`results/main_split_runs.csv`](results/main_split_runs.csv)). Hysteresis = enter/exit
 thresholds chosen on validation. Buy & hold over the test window ≈ −6.6% at every horizon.
 
 | Horizon | Model | Test acc | Always-Flat acc | Dir-F1 | Argmax return | Hysteresis return | Hyst. turnover |
@@ -157,7 +157,7 @@ thresholds chosen on validation. Buy & hold over the test window ≈ −6.6% at 
 | 300 s | LightGBM | 0.443 | 0.107 | 0.476 | +18.0% | −2.4% | 18 |
 
 **Robustness of the hysteresis results** (notebook Section 7,
-[`results/hysteresis_robustness.csv`](results/hysteresis_robustness.csv)). For each run: the
+[`results/robustness.csv`](results/robustness.csv)). For each run: the
 P&L split into long and short positions, the P&L per day, and the test return over the 3×3
 grid of neighbouring (enter, exit) values.
 
@@ -188,9 +188,8 @@ To test whether the 10-second CNN + hysteresis result holds beyond one test wind
 model is retrained on **rolling folds**: 5 days train → 1 day validation → 1 day test, moved
 forward one day at a time (6 test days, 04-13 → 04-19). The PCA is refitted on each fold's
 training days, the trading rule is picked on each fold's validation day, and the CNN is
-trained with 3 seeds plus a seed-averaged ensemble. Files:
-[`results/walk_forward_cnn.csv`](results/walk_forward_cnn.csv),
-[`results/walk_forward_lgbm.csv`](results/walk_forward_lgbm.csv).
+trained with 3 seeds plus a seed-averaged ensemble. One row per run in
+[`results/walk_forward_runs.csv`](results/walk_forward_runs.csv) (`seedens` = seed-averaged ensemble).
 
 | Hysteresis return per test day | 04-13 | 04-14 | 04-15 | 04-16 | 04-17 | 04-18 | mean | days > 0 |
 |---|---|---|---|---|---|---|---|---|
@@ -212,9 +211,9 @@ computed from. Delaying execution by d seconds (same model, same thresholds):
 | CNN single seeds | +7.7% | +2.3% | −1.0% | −2.9% | −4.9% |
 | LightGBM | +5.2% | −4.3% | −4.6% | −6.6% | −9.5% |
 
-Per day: [`results/walk_forward_delay_cnn_ensemble.csv`](results/walk_forward_delay_cnn_ensemble.csv).
+Per run and delay: [`results/delay.csv`](results/delay.csv).
 The same check on the main 70/15/15 split (test 04-17 → 04-19, 10 s, hysteresis) covers all
-four models ([`results/main_split_delay_h10.csv`](results/main_split_delay_h10.csv)):
+four models (rows starting with `main|` in the same file):
 
 | Test return | 0 s | 1 s | 2 s | 3 s | 5 s |
 |---|---|---|---|---|---|
@@ -233,7 +232,8 @@ The 1-second snapshot data cannot show whether that is achievable.
 
 **2. BTC/ETH timestamp alignment.** BTC and ETH snapshots are joined on the floored second.
 Within a matched second the ETH snapshot is taken **later** than the BTC one 24.5% of the time
-(up to 0.74 s later; 19.7% of seconds are > 0.1 s later). The ETH features therefore sometimes
+(up to 0.74 s later; 19.7% of seconds are > 0.1 s later;
+[`results/timestamp_check.csv`](results/timestamp_check.csv)). The ETH features therefore sometimes
 contain information from slightly after the BTC mid they are compared with. This is a small
 look-ahead leak in every feature set that uses market features (`full`, `no_pca`). A 1-second
 execution delay also removes this leak, which is one more reason to read the delayed numbers
